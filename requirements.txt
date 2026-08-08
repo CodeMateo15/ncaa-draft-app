@@ -1,0 +1,8 @@
+# The model and all data come from ncaa_bbStats, installed straight from the
+# tagged release so this app ships no player data of its own. Pinned to a tag
+# rather than a branch: the deployed site should not change because the package
+# repo moved.
+ncaa_bbStats[explain] @ git+https://github.com/CodeMateo15/CollegeBaseballStatsPackage@v1.3.0
+
+shiny
+pandas
