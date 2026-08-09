@@ -128,6 +128,7 @@ app_ui = ui.page_fluid(
     ui.div(
         ui.span(f"Model {be.MODEL_VERSION}", class_="version-chip"),
         V.DISCLAIMER,
+        ui.p(V.AI_NOTE, class_="ai-note"),
         class_="disclaimer",
     ),
 )

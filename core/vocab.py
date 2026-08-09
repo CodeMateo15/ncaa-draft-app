@@ -120,6 +120,13 @@ PAPER_NOTE = [
     "model card lists every difference.",
 ]
 
+AI_NOTE = (
+    "This site was built with AI assistance (Claude) as a way to visualise the "
+    "model's output, so take what you see here with discretion. The underlying "
+    "model, data and research are the author's own; the interface around them "
+    "is not hand-written and has not been reviewed line by line."
+)
+
 DISCLAIMER = (
     "This is a statistical projection built from public college statistics and "
     "team context. It has no scouting grades, velocity readings, medical "

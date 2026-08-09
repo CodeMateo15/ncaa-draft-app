@@ -1,5 +1,7 @@
 # NCAA Baseball Draft Predictor — web app
 
+**Live: https://codemateo15-ncaa-draft-app.share.connect.posit.cloud/**
+
 An interactive front end for a model of the MLB draft, built on public NCAA
 college baseball statistics. One audience selector reshapes the whole interface,
 so a scout, a player's family, a researcher and a fan each get a coherent view of
@@ -68,6 +70,13 @@ so beneath the chart rather than hiding it.
 Draft probability is a population rate, not a promise about an individual. The
 model sees box-score statistics and program strength — no scouting grades, no
 velocity, no medicals, no makeup.
+
+## A note on how this was built
+
+The interface was built with AI assistance (Claude) as a way to visualise the
+model's output. The model, the data pipeline and the research behind them are
+the author's own work; the app around them is not hand-written and has not been
+reviewed line by line. Read what it shows with that in mind.
 
 ## Licence
 

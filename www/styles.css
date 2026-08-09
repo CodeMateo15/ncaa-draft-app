@@ -289,3 +289,12 @@ h4 { font-size: 15px; margin: 18px 0 6px; color: var(--text-secondary); }
   margin: 0 0 10px;
 }
 .paper-note p:last-child { margin-bottom: 0; }
+
+.ai-note {
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  max-width: 80ch;
+}
