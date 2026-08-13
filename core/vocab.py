@@ -106,6 +106,15 @@ PAPER_NOTE = [
     "run-to-run variation of the model itself, so little is lost by the "
     "substitution — the approach and the results carry over.",
 
+    "One dependency does remain, and it is worth being exact about. The "
+    "counting statistics this site shows — at-bats, hits, innings, strikeouts — "
+    "are NCAA's own factual records, but they reached the site by way of that "
+    "commercial provider's export. A version taken straight from NCAA's "
+    "published data now exists for 2021 through 2025 and agrees with it almost "
+    "exactly, but it cannot supply a player's age, which NCAA never publishes, "
+    "and it does not cover 2026. Both of those matter to what you see here, so "
+    "the site still reads the original for now.",
+
     "Headline accuracy is close to the published figures. Individual rankings "
     "are not: the two models agree on about half of a top-100 board. That gap "
     "is mostly down to the two being fitted on different populations — this "

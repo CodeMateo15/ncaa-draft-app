@@ -78,8 +78,25 @@ model's output. The model, the data pipeline and the research behind them are
 the author's own work; the app around them is not hand-written and has not been
 reviewed line by line. Read what it shows with that in mind.
 
+## Data
+
+Everything the site shows comes from `ncaa_bbStats`, which documents every source
+and its terms in
+[DATA_PROVENANCE.md](https://github.com/CodeMateo15/ncaa_bbStats/blob/main/DATA_PROVENANCE.md).
+In short: NCAA team statistics and RPI, MLB Stats API draft records, MLB Pipeline
+prospect rankings, and the federal EADA survey for program finances.
+
+Player counting statistics are the one source with a caveat. They are NCAA's
+factual records, but they reach the package by way of a commercial provider's
+export. The package now also ships a cache taken directly from NCAA's own
+published data — via the pinned public mirrors
+[`armstjc/ncaa_baseball_data`](https://github.com/armstjc/ncaa_baseball_data) and
+[`armstjc/NCAA_Baseball_repository`](https://github.com/armstjc/NCAA_Baseball_repository)
+— which reproduces it at r ≥ 0.998 on every column. **This site still reads the
+original**, because the NCAA-sourced version cannot supply a player's age (NCAA
+publishes no date of birth) and does not cover 2026, which is this site's default
+season.
+
 ## Licence
 
-MIT for the code. Data licensing and provenance are documented in the
-[`ncaa_bbStats`](https://github.com/CodeMateo15/CollegeBaseballStatsPackage)
-repository. Not affiliated with or endorsed by MLB or the NCAA.
+MIT for the code. Not affiliated with or endorsed by MLB or the NCAA.
