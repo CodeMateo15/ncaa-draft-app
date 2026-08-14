@@ -8,6 +8,7 @@ build -- and the first request must not be the one that pays for the load.
 from __future__ import annotations
 
 import functools
+import math
 import warnings
 
 import numpy as np
@@ -121,6 +122,24 @@ def board(season: int, min_probability: float = REAL_CHANCE) -> pd.DataFrame:
         return df
     df = df.merge(PEOPLE[PEOPLE["year"] == season][["name", "team", "team name", "role"]],
                   on=["name", "team"], how="left")
+
+    # #1 is the player the model expects off the table first, not the one it is
+    # most confident about at all. The package ranks by probability, which put a
+    # 99.8%-certain 43rd-rounder above a 99.0%-certain first pick.
+    #
+    # Below the probability at which Stage 2 will project an order at all there
+    # is nothing to sort on, so those players go last and keep the probability
+    # ordering among themselves. The sort key is an explicit column rather than
+    # na_position, which cannot be set per key.
+    df = (df.assign(_unprojected=df["predicted_order"].isna())
+            .sort_values(["_unprojected", "predicted_order", "draft_probability"],
+                         ascending=[True, True, False], kind="stable")
+            .drop(columns="_unprojected")
+            .reset_index(drop=True))
+    df["rank"] = range(1, len(df) + 1)
+
+    # Cut from the new rank, so a tier means the same thing as the number
+    # beside it.
     df["tier"] = pd.cut(df["rank"], bins=[0, 50, 150, 10 ** 6],
                         labels=["Early", "Middle", "Late"])
     df["actual_college_order"] = college_order(season, df["actual_pick"])
@@ -171,6 +190,50 @@ def prediction(name: str, season: int) -> dict:
     }
 
 
+# A deploy can rebuild against a cached older package. Checked once, so the
+# cards fall back to their previous form rather than raising on every render.
+HAS_CONTRIBUTIONS = hasattr(scouting, "feature_contributions")
+
+
+@functools.lru_cache(maxsize=4096)
+def contributions(name: str, season: int, stage: int = 1) -> dict | None:
+    """Exact SHAP contributions for one player-season, in the model's units.
+
+    Only a missing SHAP install is swallowed. A feature-contract mismatch raises
+    a RuntimeError, and that should still take the page down rather than quietly
+    drop a chart -- it means the model and the feature list have diverged.
+    """
+    if not HAS_CONTRIBUTIONS:
+        return None
+    try:
+        return scouting.feature_contributions(name, season, stage=stage)
+    except scouting.MissingDependencyError:
+        return None
+
+
+def custom_contributions(feature_row: dict, stage: int = 1) -> dict | None:
+    """Same, for a stat line the user typed in.
+
+    Uncached: the key would be a dict, and the call is a few milliseconds behind
+    a button press.
+    """
+    if not HAS_CONTRIBUTIONS or not feature_row:
+        return None
+    try:
+        return scouting.feature_contributions(features=feature_row, stage=stage)
+    except scouting.MissingDependencyError:
+        return None
+
+
+def probability_from_log_odds(value: float) -> float:
+    """The logistic link. Stage 1 works in log-odds; people read probabilities."""
+    if value <= -700:
+        return 0.0
+    if value >= 700:
+        return 1.0
+    return 1.0 / (1.0 + math.exp(-value))
+
+
 def search_players(query: str, season: int | None, limit: int = 40) -> pd.DataFrame:
     """Case-insensitive substring search over the player index."""
     people = PEOPLE
@@ -197,3 +260,9 @@ def model_card() -> dict:
 
 # Stamped on the page so a screenshot always says which model produced it.
 MODEL_VERSION = model_card().get("model_version", "unknown")
+
+# Which seasons the model was fitted on. A board's rank correlation is far
+# higher in a training season than in the held-out one, and that difference is
+# the model remembering rather than the model improving -- so anywhere a
+# correlation is shown, which kind of season it came from is shown with it.
+TRAIN_YEARS = frozenset(model_card().get("train_years", []))

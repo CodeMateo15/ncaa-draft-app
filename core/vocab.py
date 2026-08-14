@@ -32,8 +32,12 @@ _STRINGS = {
                  "ranked by projected college draft order.",
         "player": "Where the model ranks this year's draft-eligible players.",
         "researcher": "Stage 1 gates on modelled draft probability; Stage 2 "
-                      "orders the survivors. Ranks are the rank of the Stage 2 "
-                      "output within the gated pool, not a predicted pick.",
+                      "orders the survivors. Rank is the rank of the Stage 2 "
+                      "output within the gated pool, not a predicted pick. "
+                      "Under “All available players” the pool reaches below "
+                      "Stage 2's 25% floor, where no order is projected at "
+                      "all; those players are ranked last, among themselves by "
+                      "Stage 1 probability.",
         "fan": "Who the model likes in this year's class.",
     },
     "prob": {

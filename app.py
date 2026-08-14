@@ -189,6 +189,19 @@ def server(input, output, session):
             df = df[df["name"].str.lower().str.contains(name, regex=False)]
         return df
 
+    @reactive.calc
+    def board_points() -> pd.DataFrame:
+        """Rows with both coordinates: what the chart plots and the tile scores.
+
+        Shared so that the correlation and the scatter can never turn out to be
+        describing different sets of players.
+        """
+        df = board_view()
+        if df.empty or "actual_college_order" not in df:
+            return df.head(0)
+        both = df["actual_college_order"].notna() & df["predicted_order"].notna()
+        return df[both]
+
     @render.ui
     def board_tab():
         m = mode()
@@ -252,6 +265,17 @@ def server(input, output, session):
                 tiles.append(tile("Draft class covered",
                                   f"{matched / total:.0%}",
                                   f"of {total:,} college draftees"))
+        # Whether the ordering above is worth reading, for the audiences that
+        # also get the scatter it summarises.
+        if mode() in ("scout", "researcher"):
+            rho, n = _spearman(board_points())
+            if rho is None:
+                tiles.append(tile("Rank correlation", "—", _no_rho_reason(n)))
+            else:
+                era = ("training season" if season in be.TRAIN_YEARS
+                       else "held-out season")
+                tiles.append(tile("Rank correlation", f"{rho:.2f}",
+                                  f"Spearman, n = {n:,} · {era}"))
         return ui.div(*tiles, class_="tiles")
 
     @render.data_frame
@@ -293,10 +317,10 @@ def server(input, output, session):
         df = board_view()
         if df.empty or "actual_college_order" not in df:
             return ui.div()
-        # A point needs both coordinates. Stage 2 only projects an order for
-        # players it is asked about, so most of the wider board has none.
+        # A point needs both coordinates. Stage 2 only projects an order above
+        # its probability floor, so most of the wider board has none.
         drafted = df[df["actual_college_order"].notna()]
-        pts = drafted[drafted["predicted_order"].notna()]
+        pts = board_points()
         if pts.empty:
             return ui.div(ui.p("No drafted players in view have a projected "
                                "order to compare against.", class_="blurb"))
@@ -410,9 +434,19 @@ def server(input, output, session):
                 "The model puts this player below the threshold where a "
                 "projected pick means anything, so only the probability is "
                 "shown.", class_="note"))
+
+        # The chart carries the same facts as the text report below it, which
+        # is why fan mode gets this and not that: a monospace table of features
+        # and medians is jargon, a picture of what helped is not.
+        blocks.append(_waterfall_block(
+            be.contributions(name, season, 1), m, heading=V.t(m, "explain")))
+        if probability >= be.MIN_PROB_FOR_PICK_DETAIL and pred["order"]:
+            blocks.append(_waterfall_block(
+                be.contributions(name, season, 2), m,
+                heading="What moves the projected pick"))
+
         text = be.report(name, season)
         if text and m != "fan":
-            blocks.append(ui.h4(V.t(m, "explain")))
             blocks.append(ui.tags.pre(text, class_="report"))
         return ui.div(*blocks, class_="card")
 
@@ -491,6 +525,24 @@ def server(input, output, session):
 
         supplied = result.get("supplied_features") or []
         confidence = result.get("confidence")
+
+        # Absent when the deployed package predates the feature row, so an
+        # older build loses the chart rather than the page.
+        row = result.get("feature_row")
+        if row:
+            blank = (
+                "Blank fields are not zeros. The model treats “not supplied” "
+                "as its own value and routes it down a learned branch, so a "
+                f"field you left empty still carries a contribution — "
+                f"{len(row) - len(supplied):,} of the {len(row):,} inputs here "
+                "were never given.")
+            blocks.append(_waterfall_block(
+                be.custom_contributions(row, 1), m,
+                heading=V.t(m, "explain"), extra_notes=(blank,)))
+            if result.get("predicted_order"):
+                blocks.append(_waterfall_block(
+                    be.custom_contributions(row, 2), m,
+                    heading="What moves the projected pick"))
         if m in ("scout", "researcher"):
             blocks.append(ui.p(
                 f"Supplied {len(supplied)} statistics. "
@@ -659,6 +711,251 @@ def _sorted_by_draft_order(df: pd.DataFrame, how: str) -> pd.DataFrame:
                               na_position="first", kind="stable")
     return df.sort_values("actual_college_order", ascending=(how == "low"),
                           na_position="last", kind="stable")
+
+
+def _waterfall_rows(payload: dict, top_n: int) -> tuple[list[dict], float, float]:
+    """Cumulative bar geometry for one stage's contributions.
+
+    Contributions arrive largest-first in the model's own units. Everything past
+    the first `top_n` is collected into one remainder bar rather than dropped:
+    the top handful of features is only about half the total movement, so a
+    chart that quietly omitted the rest would not reach its own endpoint.
+
+    Stage 1's units are log-odds, which do not stack in probability. So the walk
+    is done in log-odds and each bar is drawn at the probability the running
+    total actually moved -- expit(running + c) - expit(running). Those telescope,
+    so they tile exactly from the base probability to the final one.
+
+    Returns:
+        (rows, start, final): rows carry "from", "to" and "delta" in display
+        units; start and final are the two endpoints of the walk.
+    """
+    items = payload["contributions"]
+    rows = [dict(item) for item in items[:top_n]]
+    rest = items[top_n:]
+    if rest:
+        rows.append({
+            "feature": None,
+            "label": f"all {len(rest):,} other features",
+            "value": None,
+            "contribution": sum(item["contribution"] for item in rest),
+        })
+
+    show = (be.probability_from_log_odds if payload["stage"] == 1
+            else (lambda v: v))
+    running = payload["base"]
+    start = show(running)
+    for row in rows:
+        following = running + row["contribution"]
+        row["from"], row["to"] = show(running), show(following)
+        # expit is monotonic, so this always shares the sign of the
+        # contribution -- the colour can never contradict the tooltip.
+        row["delta"] = row["to"] - row["from"]
+        running = following
+    return rows, start, show(running)
+
+
+def _waterfall_svg(rows: list[dict], start: float, final: float, *,
+                   probability: bool, lower_is_better: bool,
+                   label: str, caption: str) -> str:
+    """One stage's contributions as a horizontal waterfall.
+
+    Horizontal because the labels are feature names running to thirty
+    characters; upright bars cannot carry them.
+    """
+    width, label_col, right_col = 680, 200, 86
+    x0, x1 = label_col + 8, width - right_col
+    row_h, bar_h, pad_top, pad_bottom = 26, 15, 14, 44
+    height = pad_top + len(rows) * row_h + pad_bottom
+
+    edges = [start, final]
+    for row in rows:
+        edges += [row["from"], row["to"]]
+    lo, hi = min(edges), max(edges)
+    span = hi - lo
+    if span < 1e-9:
+        return ""
+    lo, hi = lo - span * 0.06, hi + span * 0.06
+    if probability:
+        lo, hi = max(0.0, lo), min(1.0, hi)
+    span = hi - lo
+
+    def sx(value: float) -> float:
+        return x0 + (value - lo) / span * (x1 - x0)
+
+    candidates = ([t / 10 for t in range(11)] if probability
+                  else list(range(0, 1000, 50)))
+    ticks = [t for t in candidates if lo <= t <= hi]
+
+    def fmt(value: float) -> str:
+        return f"{value:.0%}" if probability else f"{value:,.0f}"
+
+    def fmt_delta(value: float) -> str:
+        return (f"{value * 100:+.1f} pts" if probability else f"{value:+.1f}")
+
+    # What the raw contribution beside each delta is measured in.
+    units = "log-odds" if probability else "spots"
+
+    parts = [
+        f'<line x1="{sx(t):.1f}" y1="{pad_top - 4:.1f}" x2="{sx(t):.1f}" '
+        f'y2="{height - pad_bottom + 4:.1f}" class="grid"/>'
+        f'<text x="{sx(t):.1f}" y="{height - pad_bottom + 20:.1f}" class="tick" '
+        f'text-anchor="middle">{_esc(fmt(t))}</text>' for t in ticks]
+
+    for index, row in enumerate(rows):
+        top = pad_top + index * row_h + (row_h - bar_h) / 2
+        left, right = sorted((sx(row["from"]), sx(row["to"])))
+        # A floor, so a contribution too small to draw is still visible as one.
+        bar_w = max(1.5, right - left)
+        helps = (row["contribution"] > 0) != lower_is_better
+        klass = "bar-helps" if helps else "bar-hurts"
+        if row["feature"] is None:
+            klass += " bar-rest"
+        shown = ("not supplied" if row["value"] is None
+                 else f"{row['value']:,.3f}")
+        tip = (f"{row['label']}\n"
+               f"value: {shown}\n"
+               f"{fmt_delta(row['delta'])} "
+               f"({row['contribution']:+.3f} {units})\n"
+               f"running total: {fmt(row['from'])} → {fmt(row['to'])}")
+        parts.append(
+            f'<rect x="{left:.1f}" y="{top:.1f}" width="{bar_w:.1f}" '
+            f'height="{bar_h}" rx="2" class="bar {klass}">'
+            f'<title>{_esc(tip)}</title></rect>')
+        if index < len(rows) - 1:
+            parts.append(
+                f'<line x1="{sx(row["to"]):.1f}" y1="{top + bar_h:.1f}" '
+                f'x2="{sx(row["to"]):.1f}" y2="{top + row_h:.1f}" '
+                f'class="connect"/>')
+        text_class = "flabel flabel-rest" if row["feature"] is None else "flabel"
+        parts.append(
+            f'<text x="{label_col:.0f}" y="{top + bar_h - 3:.1f}" '
+            f'class="{text_class}" text-anchor="end">'
+            f'{_esc(_clip(row["label"], 30))}</text>')
+        parts.append(
+            f'<text x="{width - 10}" y="{top + bar_h - 3:.1f}" class="vlabel" '
+            f'text-anchor="end">{_esc(fmt_delta(row["delta"]))}</text>')
+
+    for value, note in ((start, f"Model average before this player: {fmt(start)}"),
+                        (final, f"This player: {fmt(final)}")):
+        parts.append(
+            f'<line x1="{sx(value):.1f}" y1="{pad_top - 4:.1f}" '
+            f'x2="{sx(value):.1f}" y2="{height - pad_bottom + 4:.1f}" '
+            f'class="endline"><title>{_esc(note)}</title></line>')
+
+    parts.append(
+        f'<text x="{(x0 + x1) / 2:.0f}" y="{height - 8}" class="axis" '
+        f'text-anchor="middle">{_esc(label)}</text>')
+
+    return (f'<svg viewBox="0 0 {width} {height}" class="waterfall" role="img" '
+            f'aria-label="{_esc(caption)}">' + "".join(parts) + "</svg>")
+
+
+def _clip(text: str, limit: int) -> str:
+    text = str(text)
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+# How many features are drawn before the rest are collected into one bar. A
+# researcher wants the tail; a fan wants the headline.
+WATERFALL_TOP_N = {"researcher": 10, "scout": 8, "player": 6, "fan": 5}
+
+SHAP_NOTE = ("These are SHAP contributions for this player against the "
+             "population the model trained on. They explain this one "
+             "prediction, not the model in general.")
+
+LOG_ODDS_NOTE = (
+    "The model adds these up in log-odds, where each contribution stands "
+    "on its own. Reading them as probability is what makes them depend on "
+    "order: the same push is worth more in the middle of the range than it "
+    "is near 0% or 100%. The bars are walked largest-effect first and reach "
+    "the number above exactly, but a different order would divide the same "
+    "total differently.")
+
+
+def _waterfall_block(payload: dict | None, mode: str, *, heading: str,
+                     extra_notes: tuple[str, ...] = ()):
+    """One stage's contributions: heading, chart, and the caveats it needs."""
+    if not payload:
+        return ui.div()
+    rows, start, final = _waterfall_rows(
+        payload, WATERFALL_TOP_N.get(mode, 8))
+    stage_one = payload["stage"] == 1
+    svg = _waterfall_svg(
+        rows, start, final,
+        probability=stage_one,
+        # A negative Stage 2 contribution moves the player earlier in the
+        # draft, which is the good direction. Colouring by raw sign would
+        # paint that chart exactly backwards.
+        lower_is_better=not stage_one,
+        label=("Draft probability" if stage_one
+               else "Projected college draft order"),
+        caption=(f"How each statistic moves the prediction, from "
+                 f"{start:.2f} to {final:.2f}"),
+    )
+    if not svg:
+        return ui.div(ui.h4(heading),
+                      ui.p("Nothing in this line moves the model far enough "
+                           "from its average to chart.", class_="note"))
+
+    notes = [LOG_ODDS_NOTE] if stage_one else [
+        "Lower is earlier, so a bar reaching to the left is helping."]
+    if not stage_one and payload["prediction"] < 1:
+        notes.append(
+            f"The model's raw output here is {payload['prediction']:.1f}. "
+            "There is no zeroth pick, so anything below 1 is reported as 1 "
+            "elsewhere on this page; the chart shows the raw figure the "
+            "contributions actually add up to.")
+    notes.extend(extra_notes)
+    notes.append(SHAP_NOTE)
+
+    return ui.div(
+        ui.h4(heading),
+        ui.div(ui.HTML(svg), class_="chart-scroll"),
+        *[ui.p(note, class_="note") for note in notes],
+        class_="chart-block",
+    )
+
+
+def _spearman(points: pd.DataFrame) -> tuple[float | None, int]:
+    """Rank correlation of projected against actual college draft order.
+
+    Ranked and then correlated by hand rather than through
+    ``Series.corr(method="spearman")``, which reaches for
+    ``scipy.stats.spearmanr``. scipy is in this environment only because SHAP
+    depends on it, and a headline number on the board should not be one
+    dependency change away from an ImportError. Pearson on ranks is Spearman by
+    definition and agrees with pandas to fifteen decimal places.
+
+    Returns:
+        (rho, n): rho is None where it would be meaningless -- fewer than three
+        pairs, or no variation left in either ranking.
+    """
+    if points.empty:
+        return None, 0
+    # actual_college_order is nullable Int64; to_numeric is what turns pandas'
+    # NA into something rank() and corrcoef can be trusted with.
+    pair = pd.DataFrame({
+        "x": pd.to_numeric(points["predicted_order"], errors="coerce"),
+        "y": pd.to_numeric(points["actual_college_order"], errors="coerce"),
+    }).dropna()
+    n = len(pair)
+    # At n = 2 Spearman is always exactly +/-1, which says nothing.
+    if n < 3:
+        return None, n
+    rho = pair["x"].rank().corr(pair["y"].rank())
+    if rho is None or pd.isna(rho):
+        return None, n
+    return float(rho), n
+
+
+def _no_rho_reason(n: int) -> str:
+    """Why there is no correlation to show, rather than a bare dash."""
+    if n == 0:
+        return "no drafted players in view have a projection"
+    if n < 3:
+        return f"only {n} comparable player{'' if n == 1 else 's'}"
+    return "no variation left to correlate"
 
 
 def _esc(text) -> str:

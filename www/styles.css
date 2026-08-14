@@ -153,6 +153,34 @@ h4 { font-size: 15px; margin: 18px 0 6px; color: var(--text-secondary); }
 .scatter .tick { fill: var(--text-muted); font-size: 11px; }
 .scatter .axis { fill: var(--text-secondary); font-size: 12px; }
 
+/* Contribution waterfall. Same tokens as the scatter, so light and dark are
+   handled by the variable blocks above rather than by rules of its own.
+   Direction, the signed value and the label all carry the sign, so colour is
+   never the only thing saying whether a feature helped. */
+/* Scrolled rather than scaled below the min-width, the way .report is. The
+   bars carry thirty-character feature labels; shrunk to fit a phone the whole
+   chart is legible only as a shape. */
+.chart-scroll { overflow-x: auto; }
+.waterfall { width: 100%; min-width: 520px; max-width: 700px; height: auto;
+             background: var(--surface-1); border: 1px solid var(--border);
+             border-radius: 10px; }
+.waterfall .grid    { stroke: var(--border); stroke-width: 1; }
+.waterfall .connect { stroke: var(--border); stroke-width: 1; }
+.waterfall .endline { stroke: var(--text-muted); stroke-width: 1.5;
+                      stroke-dasharray: 4 4; opacity: 0.6; }
+.waterfall .bar        { stroke: var(--surface-1); stroke-width: 0.5; }
+.waterfall .bar-helps  { fill: var(--good); }
+.waterfall .bar-hurts  { fill: var(--critical); }
+/* The remainder bar is a summary, not a feature, so it sits back a little. */
+.waterfall .bar-rest      { fill-opacity: 0.5; }
+.waterfall .bar:hover     { fill-opacity: 0.75; }
+.waterfall .tick   { fill: var(--text-muted); font-size: 11px; }
+.waterfall .axis   { fill: var(--text-secondary); font-size: 12px; }
+.waterfall .flabel { fill: var(--text-secondary); font-size: 11.5px; }
+.waterfall .flabel-rest { fill: var(--text-muted); font-style: italic; }
+.waterfall .vlabel { fill: var(--text-muted); font-size: 11px;
+                     font-variant-numeric: tabular-nums; }
+
 /* The data grid and form controls render inside their own shadow-free
    wrappers; without these they keep Bootstrap's default ink and go black on
    the dark surface. */

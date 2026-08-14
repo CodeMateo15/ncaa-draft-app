@@ -7,9 +7,10 @@ college baseball statistics. One audience selector reshapes the whole interface,
 so a scout, a player's family, a researcher and a fan each get a coherent view of
 the same model rather than one kitchen-sink page.
 
-**Board** — every draft-eligible player above a probability gate, ranked, for
-2021–2026. Filter by season, role, team, draft result; sort by actual draft
-order. Scout and researcher views add a projected-vs-actual scatter.
+**Board** — every draft-eligible player above a probability gate, ranked by
+projected college draft order, for 2021–2026. Filter by season, role, team,
+draft result; sort by actual draft order. Scout and researcher views add a rank
+correlation and a projected-vs-actual scatter.
 
 **Player** — search 61,000 player-seasons and read the model's probability,
 grade and SHAP-backed strengths and concerns.

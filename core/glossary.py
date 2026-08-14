@@ -173,6 +173,21 @@ MODEL_TERMS = [
     ("Confidence", "Input completeness", "On a custom stat line, how much of "
      "the model's input was actually supplied. Low means most fields were "
      "left missing.", MODEL),
+    ("Base value", "Where the chart starts", "The model's average output over "
+     "everything it was trained on, before this player's statistics are taken "
+     "into account — about a 10% draft probability, or around the 200th "
+     "college pick. The bars carry you from there to this player's number.",
+     MODEL),
+    ("Contribution chart", "Waterfall", "Each bar is one statistic's share of "
+     "the distance between the base value and this player's prediction, and "
+     "together they cover exactly that distance. The last bar collects every "
+     "feature too small to draw on its own. Bars are specific to one player: "
+     "the same statistic can help one and hurt another.", MODEL),
+    ("Rank correlation", "Spearman ρ", "How closely the board's projected "
+     "order matched the order players were actually drafted in, from 1 for a "
+     "perfect match to 0 for none. It is much higher in a season the model "
+     "trained on than in the held-out one, which is the model remembering "
+     "rather than the model being right.", MODEL),
 ]
 
 SECTIONS = [
